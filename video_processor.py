@@ -76,7 +76,7 @@ def get_llm(temperature=0.0):
     client = Client(verify=False)
     return ChatOpenAI(
         model="Qwen/Qwen2.5-VL-3B-Instruct",
-        openai_api_base="http://localhost:8233/v1",
+        openai_api_base=os.getenv("OPENAI_API_BASE", "http://localhost:8233/v1"),
         openai_api_key="your_api_key",
         http_client=client,
         temperature=temperature,
@@ -208,8 +208,8 @@ class VideoOCRProcessor:
         return timestamps_with_start
 
 
-def save_segments_json(segments, json_output="segments.json"):
-    """Lưu thông tin segments vào file JSON"""
+def serialize_segments(segments):
+    """Chuyển segments sang cấu trúc JSON-ready"""
     output = []
 
     for i, seg in enumerate(segments):
@@ -223,6 +223,13 @@ def save_segments_json(segments, json_output="segments.json"):
             "end": end,
             "text": text,
         })
+
+    return output
+
+
+def save_segments_json(segments, json_output="segments.json"):
+    """Lưu thông tin segments vào file JSON"""
+    output = serialize_segments(segments)
 
     with open(json_output, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
@@ -254,6 +261,18 @@ def process_video_item(item: PlaylistItem, base_output_dir: str, scan_step: int 
             "segment_count": len(segments),
             "ocr_calls": processor.ocr_calls,
         }
+
+
+def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None):
+    """Xử lý một video và trả về danh sách segments (không lưu file)."""
+    if crop is None:
+        crop = (100, 530, 1200, 680)
+
+    with VideoOCRProcessor(video_path, crop=crop) as processor:
+        timestamps = processor.scan_video(scan_step=scan_step)
+        segments = processor.build_segments(timestamps)
+
+    return serialize_segments(segments)
 
 
 def _iter_batches(items, batch_size):
@@ -345,11 +364,15 @@ def scan_video_directory(video_dir: str):
 
 
 if __name__ == "__main__":
-    # Đường dẫn thư mục chứa video
-    VIDEO_INPUT_DIR = "/home/app/cuonglp1/speech_topic/data/raw"  
+    VIDEO_INPUT_DIR = os.getenv(
+        "VIDEO_INPUT_DIR",
+        "/home/app/cuonglp1/speech_topic/data/raw",
+    )
     
-    # Đường dẫn thư mục output
-    PROCESSING_OUTPUT_DIR = "/home/app/cuonglp1/speech_topic/data/processed_final"
+    PROCESSING_OUTPUT_DIR = os.getenv(
+        "PROCESSING_OUTPUT_DIR",
+        "/home/app/cuonglp1/speech_topic/data/processed_final",
+    )
     
     # Các tham số xử lý
     BATCH_SIZE = 4          # Số video xử lý song song
