@@ -1,4 +1,4 @@
-name: "vllm_model"
+name: "vllm_llama"
 backend: "vllm"
 max_batch_size: 0
 
@@ -44,7 +44,7 @@ instance_group [
 parameters: {
   key: "model"
   value: {
-    string_value: "Qwen/Qwen2.5-VL-3B-Instruct"
+    string_value: "meta-llama/Llama-3.2-3B-Instruct"
   }
 }
 
@@ -58,13 +58,14 @@ parameters: {
 parameters: {
   key: "gpu_memory_utilization"
   value: {
-    string_value: "0.4"
+    string_value: "0.3"
   }
 }
 
 parameters: {
   key: "max_model_len"
   value: {
-    string_value: "32768"
+    string_value: "8192"
   }
 }
+

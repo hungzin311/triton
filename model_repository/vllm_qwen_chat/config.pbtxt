@@ -1,4 +1,4 @@
-name: "vllm_model"
+name: "vllm_qwen_chat"
 backend: "vllm"
 max_batch_size: 0
 
@@ -44,7 +44,7 @@ instance_group [
 parameters: {
   key: "model"
   value: {
-    string_value: "Qwen/Qwen2.5-VL-3B-Instruct"
+    string_value: "Qwen/Qwen2.5-7B-Instruct"
   }
 }
 
@@ -65,6 +65,7 @@ parameters: {
 parameters: {
   key: "max_model_len"
   value: {
-    string_value: "32768"
+    string_value: "16384"
   }
 }
+
