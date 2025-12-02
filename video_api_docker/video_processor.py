@@ -56,6 +56,7 @@ def create_llm(temperature=0.0):
         openai_api_key="your_api_key",
         http_client=http_client,
         temperature=temperature,
+        max_token = 1024,
     )
     return llm, http_client
 
@@ -231,10 +232,6 @@ def _process_video_worker(video_path: str, scan_step: int, crop, result_queue):
 
 
 def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None):
-    """
-    Xử lý một video và trả về danh sách segments (không lưu file).
-    Chạy trong subprocess riêng để kernel giải phóng hoàn toàn memory sau mỗi request.
-    """
     if crop is None:
         crop = (100, 530, 1200, 680)
     
