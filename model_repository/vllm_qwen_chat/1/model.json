@@ -1,7 +1,7 @@
 {
   "model": "Qwen/Qwen2.5-7B-Instruct",
   "disable_log_stats": false,
-  "gpu_memory_utilization": 0.4,
+  "gpu_memory_utilization": 0.7,
   "max_model_len": 16384,
   "dtype": "auto",
   "enforce_eager": false,

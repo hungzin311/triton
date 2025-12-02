@@ -1,7 +1,7 @@
 {
   "model": "meta-llama/Llama-3.2-3B-Instruct",
   "disable_log_stats": false,
-  "gpu_memory_utilization": 0.3,
+  "gpu_memory_utilization": 0.4,
   "max_model_len": 8192,
   "dtype": "auto",
   "enforce_eager": false,

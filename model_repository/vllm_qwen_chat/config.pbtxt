@@ -58,7 +58,7 @@ parameters: {
 parameters: {
   key: "gpu_memory_utilization"
   value: {
-    string_value: "0.4"
+    string_value: "0.7"
   }
 }
 
