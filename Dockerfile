@@ -16,6 +16,6 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY video_processor.py .
-
+COPY video_processor.py api_server.py ./
 CMD ["python", "video_processor.py"]
 
