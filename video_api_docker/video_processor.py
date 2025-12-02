@@ -2,10 +2,11 @@ import os
 import json
 import unicodedata
 import gc
+import multiprocessing as mp
 from dataclasses import dataclass
 from pathlib import Path
 from difflib import SequenceMatcher
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import base64
 import psutil
 
@@ -17,20 +18,6 @@ from langchain_core.messages import HumanMessage
 from httpx import Client
 
 proc = psutil.Process(os.getpid())
-
-def _rss_mb():
-    """Return total RSS (MB) of current process + children."""
-    rss = proc.memory_info().rss
-    for child in proc.children(recursive=True):
-        try:
-            rss += child.memory_info().rss
-        except psutil.NoSuchProcess:
-            pass
-    return rss / (1024 * 1024)
-
-def log_mem(tag: str):
-    print(f"[MEM] {tag:<20s} RSS = {_rss_mb():7.1f} MB")
-
 
 @dataclass
 class PlaylistItem:
@@ -72,17 +59,18 @@ def numpy_to_base64(img: np.ndarray) -> str:
     return img_b64
 
 
-def get_llm(temperature=0.0):
-    client = Client(verify=False)
-    return ChatOpenAI(
+def create_llm(temperature=0.0):
+    """Tạo LLM client mới (dùng trong mỗi process)"""
+    http_client = Client(verify=False)
+    llm = ChatOpenAI(
         model="Qwen/Qwen2.5-VL-3B-Instruct",
         openai_api_base=os.getenv("OPENAI_API_BASE", "http://localhost:8233/v1"),
         openai_api_key="your_api_key",
-        http_client=client,
+        http_client=http_client,
         temperature=temperature,
     )
+    return llm, http_client
 
-llm = get_llm()
 
 class VideoOCRProcessor:
     def __init__(self, video_path: str, crop=(100, 530, 1200, 680)):
@@ -93,11 +81,29 @@ class VideoOCRProcessor:
         self.video_fps = float(self.vr.get_avg_fps())
         self.ocr_calls = 0
         self.ocr_cache = {}
+        self._llm, self._http_client = create_llm()
     
     def cleanup(self):
         self.ocr_cache.clear()
+        
+        # Đóng httpx client
+        if hasattr(self, '_http_client') and self._http_client:
+            try:
+                self._http_client.close()
+            except:
+                pass
+        
+        # Xóa LLM
+        if hasattr(self, '_llm'):
+            del self._llm
+        
         if hasattr(self, 'vr'):
+            try:
+                self.vr.seek(0)  # Reset position
+            except:
+                pass
             del self.vr
+            gc.collect()
     
     def __enter__(self):
         return self
@@ -141,7 +147,7 @@ class VideoOCRProcessor:
             ]
         )
 
-        response = llm.invoke([message])
+        response = self._llm.invoke([message])
         text = response.content
         self.ocr_cache[frame_time] = text
         return text
@@ -209,7 +215,6 @@ class VideoOCRProcessor:
 
 
 def serialize_segments(segments):
-    """Chuyển segments sang cấu trúc JSON-ready"""
     output = []
 
     for i, seg in enumerate(segments):
@@ -228,7 +233,6 @@ def serialize_segments(segments):
 
 
 def save_segments_json(segments, json_output="segments.json"):
-    """Lưu thông tin segments vào file JSON"""
     output = serialize_segments(segments)
 
     with open(json_output, "w", encoding="utf-8") as f:
@@ -237,9 +241,15 @@ def save_segments_json(segments, json_output="segments.json"):
     return output
 
 
-def process_video_item(item: PlaylistItem, base_output_dir: str, scan_step: int = 4):
-    video_path = Path(item.video_path)
-    output_dir = Path(base_output_dir) / f"{item.index:03d}"
+def _process_single_video(args):
+    """
+    Wrapper function cho ProcessPoolExecutor.
+    Nhận tuple (index, title, video_path, base_output_dir, scan_step)
+    """
+    index, title, video_path, base_output_dir, scan_step = args
+    
+    video_path = Path(video_path)
+    output_dir = Path(base_output_dir) / f"{index:03d}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Dùng context manager để tự động cleanup sau khi xử lý xong
@@ -247,15 +257,15 @@ def process_video_item(item: PlaylistItem, base_output_dir: str, scan_step: int 
         timestamps = processor.scan_video(scan_step=scan_step)
         segments = processor.build_segments(timestamps)
 
-        segments_json = output_dir / f"{item.index:03d}_segments.json"
+        segments_json = output_dir / f"{index:03d}_segments.json"
         save_segments_json(
             segments=segments,
             json_output=str(segments_json)
         )
 
         return {
-            "index": item.index,
-            "title": item.title,
+            "index": index,
+            "title": title,
             "video_path": str(video_path),
             "segments_json": str(segments_json),
             "segment_count": len(segments),
@@ -263,16 +273,47 @@ def process_video_item(item: PlaylistItem, base_output_dir: str, scan_step: int 
         }
 
 
+def process_video_item(item: PlaylistItem, base_output_dir: str, scan_step: int = 4):
+    return _process_single_video((
+        item.index,
+        item.title,
+        item.video_path,
+        base_output_dir,
+        scan_step
+    ))
+
+
+def _process_video_worker(video_path: str, scan_step: int, crop, result_queue):
+    """Worker chạy trong subprocess riêng để tránh memory leak"""
+    try:
+        with VideoOCRProcessor(video_path, crop=crop) as processor:
+            timestamps = processor.scan_video(scan_step=scan_step)
+            segments = processor.build_segments(timestamps)
+        result_queue.put(("success", serialize_segments(segments)))
+    except Exception as e:
+        result_queue.put(("error", str(e)))
+
+
 def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None):
-    """Xử lý một video và trả về danh sách segments (không lưu file)."""
+    """
+    Xử lý một video và trả về danh sách segments (không lưu file).
+    Chạy trong subprocess riêng để kernel giải phóng hoàn toàn memory sau mỗi request.
+    """
     if crop is None:
         crop = (100, 530, 1200, 680)
-
-    with VideoOCRProcessor(video_path, crop=crop) as processor:
-        timestamps = processor.scan_video(scan_step=scan_step)
-        segments = processor.build_segments(timestamps)
-
-    return serialize_segments(segments)
+    
+    # Spawn subprocess để xử lý video
+    # Khi subprocess kết thúc, kernel giải phóng 100% memory (bao gồm Decord/FFmpeg)
+    result_queue = mp.Queue()
+    p = mp.Process(target=_process_video_worker, args=(video_path, scan_step, crop, result_queue))
+    p.start()
+    p.join()  # Đợi subprocess kết thúc
+    
+    status, data = result_queue.get()
+    if status == "error":
+        raise RuntimeError(data)
+    
+    return data
 
 
 def _iter_batches(items, batch_size):
@@ -301,21 +342,28 @@ def process_playlist_items(
     
     for batch_idx, chunk in enumerate(_iter_batches(filtered_items, batch_size), start=1):
         batch_results = []
-        log_mem(f"batch {batch_idx} start")
-        with ThreadPoolExecutor(max_workers=len(chunk)) as executor:
+
+        task_args = [
+            (item.index, item.title, item.video_path, base_output_dir, scan_step)
+            for item in chunk
+        ]
+        
+        # Mỗi process khi kết thúc sẽ được kernel giải phóng TOÀN BỘ memory
+        with ProcessPoolExecutor(max_workers=len(chunk)) as executor:
             future_map = {
-                executor.submit(process_video_item, item, base_output_dir, scan_step): item
-                for item in chunk
+                executor.submit(_process_single_video, args): args
+                for args in task_args
             }
             for future in as_completed(future_map):
-                item = future_map[future]
+                args = future_map[future]
+                index, title = args[0], args[1]
                 try:
                     result = future.result()
-                    print(f"✓ Processed #{item.index:03d}: {item.title}")
+                    print(f"✓ Processed #{index:03d}: {title}")
                     results.append(result)
                     batch_results.append(result)
                 except Exception as exc:
-                    print(f"✗ Failed #{item.index:03d}: {item.title} -> {exc}")
+                    print(f"✗ Failed #{index:03d}: {title} -> {exc}")
         
         # Print kết quả sau mỗi batch
         if batch_results:
@@ -328,10 +376,7 @@ def process_playlist_items(
             print(f"   Tổng đã xử lý: {len(results)}/{len(filtered_items)} video")
             print("─" * 60 + "\n")
         
-        # Force garbage collection để giải phóng memory sau mỗi batch
         gc.collect()
-        log_mem(f"batch {batch_idx} end")
-
     return sorted(results, key=lambda item: item['index'])
 
 
@@ -375,7 +420,7 @@ if __name__ == "__main__":
     )
     
     # Các tham số xử lý
-    BATCH_SIZE = 4          # Số video xử lý song song
+    BATCH_SIZE = 1          # Số video xử lý song song
     SCAN_STEP = 4           # Bước nhảy khi scan video (giây)
     START_INDEX = None      # Index video đầu tiên cần xử lý (None = từ đầu)
     END_INDEX = None        # Index video cuối cùng cần xử lý (None = đến hết)
@@ -411,5 +456,4 @@ if __name__ == "__main__":
         start_index=START_INDEX,
         end_index=END_INDEX,
     )
-
 
