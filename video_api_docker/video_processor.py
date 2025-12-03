@@ -12,7 +12,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from httpx import Client
 
-
 def normalized(text):
     if text is None:
         return ""
@@ -56,7 +55,7 @@ def create_llm(temperature=0.0):
         openai_api_key="your_api_key",
         http_client=http_client,
         temperature=temperature,
-        max_token = 1024,
+        max_tokens = 200,
     )
     return llm, http_client
 
@@ -127,7 +126,7 @@ class VideoOCRProcessor:
             content=[
                 {
                     "type": "text",
-                    "text": "Hãy đọc OCR trong ảnh này, trả về text đúng nhất. Chỉ trả về text, không giải thích thêm. Nếu trong ảnh không có text hoặc không đọc được ocr thì trả về \"\". Nếu trong ảnh có phần bảng tên của người phỏng vấn thì cũng không trả về text ở trong đó.",
+                    "text": "Hãy đọc OCR trong ảnh này, trả về text đúng nhất. Chỉ trả về text, không giải thích thêm. Nếu trong ảnh không có text hoặc không đọc được ocr thì trả về KHÔNG CÓ CHỮ.",
                 },
                 {
                     "type": "image_url",
@@ -231,7 +230,8 @@ def _process_video_worker(video_path: str, scan_step: int, crop, result_queue):
         result_queue.put(("error", str(e)))
 
 
-def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None):
+def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None, timeout: int = 600):
+    
     if crop is None:
         crop = (100, 530, 1200, 680)
     
@@ -240,9 +240,26 @@ def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None):
     result_queue = mp.Queue()
     p = mp.Process(target=_process_video_worker, args=(video_path, scan_step, crop, result_queue))
     p.start()
-    p.join()  # Đợi subprocess kết thúc
+    p.join(timeout=timeout)  # Đợi subprocess với timeout
     
-    status, data = result_queue.get()
+    # Kiểm tra nếu process vẫn đang chạy (quá timeout)
+    if p.is_alive():
+        # Kill process
+        p.terminate()
+        p.join(timeout=5)  
+        
+        # Nếu vẫn không chết, force kill
+        if p.is_alive():
+            p.kill()
+            p.join(timeout=2)
+        
+        raise TimeoutError(f"Video processing timed out after {timeout} seconds ({timeout/60:.1f} minutes)")
+    
+    try:
+        status, data = result_queue.get_nowait()
+    except:
+        raise RuntimeError("Process ended without returning result")
+    
     if status == "error":
         raise RuntimeError(data)
     

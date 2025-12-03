@@ -49,17 +49,23 @@ async def process_video(
         shutil.copyfileobj(file.file, tmp)
     
     try:
-        # Xử lý video
         segments = process_video_to_segments(
             video_path=tmp_path,
             scan_step=scan_step,
             crop=crop_tuple,
+            timeout=600,  
         )
         
         return {
             "filename": file.filename,
             "segment_count": len(segments),
             "segments": segments,
+        }
+    except TimeoutError as exc:
+        return {
+            "filename": file.filename,
+            "segment_count": 0, 
+            "segments": [],
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
