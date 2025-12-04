@@ -1,7 +1,7 @@
 {
   "model": "microsoft/Phi-3.5-mini-instruct",
   "disable_log_stats": false,
-  "gpu_memory_utilization": 0.25,
+  "gpu_memory_utilization": 0.4,
   "max_model_len": 8192,
   "dtype": "auto",
   "enforce_eager": false,
