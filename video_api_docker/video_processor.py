@@ -63,7 +63,6 @@ def create_llm(temperature=0.0):
 class VideoOCRProcessor:
     def __init__(self, video_path: str, crop=(100, 530, 1200, 680)):
         self.video_path = video_path
-        self.crop = crop
         self.vr = VideoReader(video_path, ctx=cpu(0))
         self.total_frames = len(self.vr)
         self.video_fps = float(self.vr.get_avg_fps())
@@ -108,7 +107,8 @@ class VideoOCRProcessor:
             return None
 
         frame = self.vr[frame_index].asnumpy()
-        x1, y1, x2, y2 = self.crop
+        h,w, _ = frame.shape
+        x1, y1, x2, y2 = (100, int(h*2/3), w, h-50)
         return frame[y1:y2, x1:x2]
 
     def ocr(self, frame_time: float):
@@ -126,7 +126,7 @@ class VideoOCRProcessor:
             content=[
                 {
                     "type": "text",
-                    "text": "Hãy đọc OCR trong ảnh này, trả về text đúng nhất. Chỉ trả về text, không giải thích thêm. Nếu trong ảnh không có text hoặc không đọc được ocr thì trả về KHÔNG CÓ CHỮ.",
+                    "text": "Hãy trích xuất văn bản (OCR) từ hình ảnh. Chỉ trả về đúng nội dung văn bản. Nếu không có chữ hoặc không thể nhận dạng được, trả về 'KHÔNG CÓ CHỮ'.",
                 },
                 {
                     "type": "image_url",
@@ -231,11 +231,10 @@ def _process_video_worker(video_path: str, scan_step: int, crop, result_queue):
 
 
 def process_video_to_segments(video_path: str, scan_step: int = 4, crop=None, timeout: int = 600):
-    
+
     if crop is None:
         crop = (100, 530, 1200, 680)
     
-    # Spawn subprocess để xử lý video
     # Khi subprocess kết thúc, kernel giải phóng 100% memory (bao gồm Decord/FFmpeg)
     result_queue = mp.Queue()
     p = mp.Process(target=_process_video_worker, args=(video_path, scan_step, crop, result_queue))
