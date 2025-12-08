@@ -1,9 +1,10 @@
 {
   "model": "Qwen/Qwen2.5-VL-3B-Instruct",
   "disable_log_stats": false,
-  "gpu_memory_utilization": 0.45,
-  "max_model_len": 32768,
+  "gpu_memory_utilization": 0.4,
+  "max_model_len": 16384,
   "dtype": "auto",
+  "quantization": "fp8",
   "enforce_eager": false,
   "max_num_seqs": 256,
   "tensor_parallel_size": 1,

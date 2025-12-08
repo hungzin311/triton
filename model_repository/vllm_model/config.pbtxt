@@ -58,13 +58,13 @@ parameters: {
 parameters: {
   key: "gpu_memory_utilization"
   value: {
-    string_value: "0.45"
+    string_value: "0.4"
   }
 }
 
 parameters: {
   key: "max_model_len"
   value: {
-    string_value: "32768"
+    string_value: "16384"
   }
 }

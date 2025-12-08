@@ -3,6 +3,7 @@
   "disable_log_stats": false,
   "gpu_memory_utilization": 0.4,
   "max_model_len": 8192,
+  "quantization": "fp8",
   "dtype": "auto",
   "enforce_eager": false,
   "max_num_seqs": 256,
