@@ -63,6 +63,11 @@ parameters: {
 }
 
 parameters: {
+  key: "ENABLE_VLLM_HEALTH_CHECK"
+  value: { string_value: "true" }
+}
+
+parameters: {
   key: "max_model_len"
   value: {
     string_value: "16384"
