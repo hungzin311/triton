@@ -7,7 +7,7 @@ import sys
 from tritonclient.utils import *
 
 class LLMClient: 
-    def __int__(self, flags: argparse.Namespace):
+    def __init__(self, flags: argparse.Namespace):
         self._flags = flags 
         self._results_dict = {}
     
@@ -27,8 +27,9 @@ class LLMClient:
         try: 
             for iter in range(self._flags.iterations):
                 for i, prompt in enumerate(prompts): 
-                    prompt_id = self. _flags.offset + len(prompts) * iter + i
-                    self._results_dict[prompt_id] = []
+                    #print(type(prompt), prompt)
+                    prompt_id = self._flags.offset + len(prompts) * iter + i
+                    self._results_dict[str(prompt_id)] = []
                     yield self.create_request(
                         prompt, 
                         self._flags.streaming_mode, 
@@ -44,7 +45,7 @@ class LLMClient:
         try:
             triton_client = self.get_triton_client()
             response_iterator = triton_client.stream_infer(
-                inputs_generator = self.async_request_iterator(prompts, sampling_parameter, exclude_input_in_output), 
+                inputs_iterator = self.async_request_iterator(prompts, sampling_parameter, exclude_input_in_output), 
                 stream_timeout = self._flags.stream_timeout
             )
 
@@ -56,7 +57,7 @@ class LLMClient:
             sys.exit(1)
 
     async def process_stream(self, prompts, sampling_parameter, exclude_input_in_output): 
-        self._results_dict = {}
+        self.results_dict = {}
         success = True 
 
         async for response in self.stream_infer(prompts, sampling_parameter, exclude_input_in_output):
@@ -66,7 +67,7 @@ class LLMClient:
                 success = False 
             else: 
                 output = result.as_numpy("text_output")
-                for i in output: 
+                for i in output:
                     self._results_dict[result.get_response().id].append(i)
         
         return success
@@ -97,7 +98,6 @@ class LLMClient:
     def create_request(self, prompt, stream, request_id, sampling_parameters, exclude_input_output, send_parameters_as_tensor=True):
         inputs= []
         prompt_data = np.array([prompt.encode('utf-8')], dtype = np.object_)
-
         try: 
             inputs.append(grpcclient.InferInput('text_input', [1], "BYTES"))
             inputs[-1].set_data_from_numpy(prompt_data)
@@ -110,11 +110,11 @@ class LLMClient:
         inputs[-1].set_data_from_numpy(stream_data)
 
         if send_parameters_as_tensor:
-            sampling_parameters_data = np.array([sampling_parameters.encode('utf-8')], dtype = np.object_)
+            sampling_parameters_data = np.array([json.dumps(sampling_parameters).encode('utf-8')], dtype = np.object_)
             inputs.append(grpcclient.InferInput('sampling_parameters', [1], "BYTES"))
             inputs[-1].set_data_from_numpy(sampling_parameters_data)
         
-        inputs.append(grpcclient.InferRequestedOutput('exclude_input_in_output', [1], "BOOL"))
+        inputs.append(grpcclient.InferInput('exclude_input_in_output', [1], "BOOL"))
         inputs[-1].set_data_from_numpy(np.array([exclude_input_output], dtype = bool))
 
         outputs = []
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", type=str, required=False, default="vllm_model", help="Model name")
     parser.add_argument("-v", "--verbose", type=bool, required=False, default=False, help="Verbose")
-    parser.add_argument("-u", "--url", type=str, required=False, default="localhost:9001", help="URL")
+    parser.add_argument("-u", "--url", type=str, required=False, default="localhost:9002", help="URL")
     parser.add_argument("-t", "--stream-timeout", type=float, required=False, default=None, help="Stream timeout")
     parser.add_argument("-p", "--prompt", type=str, required=False, default=None, help="Prompt")
     parser.add_argument("--iterations", type=int, required=False, default=1, help="Iterations")
@@ -143,3 +143,4 @@ if __name__ == "__main__":
 
     FLAGS = parser.parse_args()
     client = LLMClient(FLAGS)
+    client.run_async()
