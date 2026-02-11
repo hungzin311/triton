@@ -1,0 +1,53 @@
+name: "bert_onnx"
+backend: "onnxruntime"
+max_batch_size: 32
+
+input [
+  {
+    name: "input_ids"
+    data_type: TYPE_INT64
+    dims: [-1]
+  },
+  {
+    name: "attention_mask"
+    data_type: TYPE_INT64
+    dims: [-1]
+  }
+]
+
+output [
+  {
+    name: "last_hidden_state"
+    data_type: TYPE_FP32
+    dims: [-1, 768]
+  },
+  {
+    name: "pooler_output"
+    data_type: TYPE_FP32
+    dims: [768]
+  }
+]
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+    gpus: [0]
+  }
+]
+
+# Optimization settings for ONNX Runtime
+optimization {
+  execution_accelerators {
+    gpu_execution_accelerator : [ {
+      name : "cuda"
+    }]
+  }
+}
+
+# Dynamic batching for better throughput
+dynamic_batching {
+  preferred_batch_size: [4, 8, 16]
+  max_queue_delay_microseconds: 100
+}
+

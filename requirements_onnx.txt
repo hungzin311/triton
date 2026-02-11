@@ -1,0 +1,11 @@
+# Requirements for BERT ONNX conversion and testing
+torch>=2.0.0
+transformers>=4.30.0
+onnx>=1.14.0
+onnxruntime>=1.15.0
+onnxruntime-gpu>=1.15.0  # For GPU acceleration
+numpy>=1.24.0
+
+# Triton client libraries
+tritonclient[all]>=2.40.0
+

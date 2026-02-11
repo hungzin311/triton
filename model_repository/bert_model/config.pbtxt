@@ -1,0 +1,47 @@
+name: "bert_model"
+backend: "python"
+max_batch_size: 32
+
+input [
+  {
+    name: "text_input"
+    data_type: TYPE_STRING
+    dims: [-1]
+  }
+]
+
+output [
+  {
+    name: "embeddings"
+    data_type: TYPE_FP32
+    dims: [-1, 768]
+  },
+  {
+    name: "pooler_output"
+    data_type: TYPE_FP32
+    dims: [768]
+  }
+]
+
+instance_group [
+  {
+    count: 1
+    kind: KIND_GPU
+    gpus: [0]
+  }
+]
+
+parameters: {
+  key: "model_name"
+  value: {
+    string_value: "bert-base-uncased"
+  }
+}
+
+parameters: {
+  key: "max_length"
+  value: {
+    string_value: "512"
+  }
+}
+
